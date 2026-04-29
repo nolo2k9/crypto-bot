@@ -1,0 +1,51 @@
+# Secrets
+.env
+.env.*
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Bot runtime output (generated files — do not commit)
+bot_state.json
+trades.csv
+*.log
+*.log.*
+runtime/
+
+# Backtest artefacts
+Backtest
+backtest_results/
+grid_results/
+
+# ML model artefacts
+*.pkl
+*.joblib
+*.model
+ml_model/models/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
