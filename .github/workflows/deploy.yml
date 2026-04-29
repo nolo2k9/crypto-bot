@@ -39,12 +39,17 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPO:latest
           echo "image=$ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
+      - name: Decode SSH key
+        run: |
+          echo "${{ secrets.EC2_SSH_KEY }}" | base64 -d > /tmp/deploy_key
+          chmod 600 /tmp/deploy_key
+
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
-          key: ${{ secrets.EC2_SSH_KEY }}
+          key_path: /tmp/deploy_key
           script: |
             aws ecr get-login-password --region us-east-1 \
               | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
