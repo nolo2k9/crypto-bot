@@ -1,7 +1,7 @@
 #!/bin/bash
 # Pulls all /spiderbot/* secrets from SSM and writes .env
 set -e
-REGION="eu-west-1"
+REGION="us-east-1"
 DEST="/home/ubuntu/crypto-bot/.env"
 
 echo "[secrets] Fetching from SSM Parameter Store..."

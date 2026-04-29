@@ -6,7 +6,7 @@ cd /home/ubuntu/crypto-bot
 source build.env
 
 echo "[start] Pulling image $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG..."
-aws ecr get-login-password --region eu-west-1 \
+aws ecr get-login-password --region us-east-1 \
   | docker login --username AWS --password-stdin "$ECR_REGISTRY"
 
 # Tell compose to use the pre-built ECR image instead of building locally
