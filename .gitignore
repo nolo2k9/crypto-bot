@@ -29,7 +29,7 @@ trades.csv
 runtime/
 
 # Backtest artefacts
-Backtest
+/Backtest
 backtest_results/
 grid_results/
 
