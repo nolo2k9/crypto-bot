@@ -1,0 +1,51 @@
+{
+  "title": "SpiderBot",
+  "uid": "spiderbot",
+  "version": 1,
+  "schemaVersion": 36,
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Equity (USDT)",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "targets": [{"expr": "bot_equity_usdt", "legendFormat": "Equity"}],
+      "fieldConfig": {"defaults": {"unit": "currencyUSD", "color": {"mode": "thresholds"},
+        "thresholds": {"steps": [{"color": "red", "value": 0}, {"color": "green", "value": 5000}]}}}
+    },
+    {
+      "id": 2,
+      "title": "Max Drawdown (%)",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+      "targets": [{"expr": "bot_max_drawdown_pct", "legendFormat": "Drawdown"}],
+      "fieldConfig": {"defaults": {"unit": "percent", "color": {"mode": "thresholds"},
+        "thresholds": {"steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 5}, {"color": "red", "value": 10}]}}}
+    },
+    {
+      "id": 3,
+      "title": "Realized PnL by Symbol (USDT)",
+      "type": "bargauge",
+      "gridPos": {"h": 4, "w": 12, "x": 12, "y": 0},
+      "targets": [{"expr": "bot_realized_pnl_usdt", "legendFormat": "{{symbol}}"}],
+      "fieldConfig": {"defaults": {"unit": "currencyUSD"}}
+    },
+    {
+      "id": 4,
+      "title": "Equity Over Time",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 4},
+      "targets": [{"expr": "bot_equity_usdt", "legendFormat": "Equity (USDT)"}],
+      "fieldConfig": {"defaults": {"unit": "currencyUSD", "color": {"mode": "fixed", "fixedColor": "green"}}}
+    },
+    {
+      "id": 5,
+      "title": "PnL Over Time",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 12},
+      "targets": [{"expr": "bot_realized_pnl_usdt", "legendFormat": "{{symbol}}"}],
+      "fieldConfig": {"defaults": {"unit": "currencyUSD"}}
+    }
+  ]
+}

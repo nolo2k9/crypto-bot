@@ -27,6 +27,7 @@ trades.csv
 *.log
 *.log.*
 runtime/
+data/
 
 # Backtest artefacts
 /Backtest

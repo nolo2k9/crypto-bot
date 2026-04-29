@@ -10,11 +10,44 @@ services:
       - TRADE_LOG_CSV=/data/trades.csv
       - STATE_FILE=/data/bot_state.json
     volumes:
-      - ./data:/data          # trades.csv, trader.log, bot_state.json
+      - ./data:/data
     ports:
-      - "8000:8000"           # Prometheus metrics
+      - "8000:8000"
     mem_limit: 512m
-    command: ["--mode", "paper", "--use-testnet", "--symbols", "BTCUSDT", "ETHUSDT", "SOLUSDT",
+    command: ["--mode", "paper", "--use-testnet", "--symbols",
+              "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "AVAXUSDT",
               "--interval", "4h", "--leverage", "10", "--risk", "0.01",
               "--tp-mult", "2.5", "--sl-mult", "1.5", "--adx-threshold", "25",
               "--fee", "0.0005", "--no-ml"]
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=30d'
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=spiderbot
+      - GF_USERS_ALLOW_SIGN_UP=false
+    depends_on:
+      - prometheus
+
+volumes:
+  prometheus_data:
+  grafana_data:
