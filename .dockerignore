@@ -1,0 +1,17 @@
+.env
+.env.*
+.git/
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.log
+*.csv
+bot_state.json
+data/
+.DS_Store
+.idea/
+.vscode/
+Backtest
+runtime/
+Crypto_Bot/

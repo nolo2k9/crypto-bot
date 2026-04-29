@@ -1,0 +1,20 @@
+services:
+  spiderbot:
+    image: ${ECR_IMAGE:-crypto-bot-spiderbot}
+    build: .
+    container_name: spiderbot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - LOG_FILE=/data/trader.log
+      - TRADE_LOG_CSV=/data/trades.csv
+      - STATE_FILE=/data/bot_state.json
+    volumes:
+      - ./data:/data          # trades.csv, trader.log, bot_state.json
+    ports:
+      - "8000:8000"           # Prometheus metrics
+    mem_limit: 512m
+    command: ["--mode", "paper", "--use-testnet", "--symbols", "BTCUSDT", "ETHUSDT", "SOLUSDT",
+              "--interval", "4h", "--leverage", "10", "--risk", "0.01",
+              "--tp-mult", "2.5", "--sl-mult", "1.5", "--adx-threshold", "25",
+              "--fee", "0.0005", "--no-ml"]

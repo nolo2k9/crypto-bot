@@ -54,7 +54,7 @@ def parse_args():
     p.add_argument("--residual-sleep-sec", type=float, default=0.5, help="Sleep between residual clean-up retries.")
     p.add_argument("--residual-qty-threshold", type=float, default=1e-6,
                    help="Qty below which a futures position is considered flat.")
-    p.add_argument("--state-file", type=str, default="bot_state.json",
+    p.add_argument("--state-file", type=str, default=os.getenv("STATE_FILE", "bot_state.json"),
                    help="Path to persist/restore runtime state.")
     p.add_argument("--autosave-sec", type=int, default=60, help="Autosave interval for runtime state file.")
     p.add_argument("--exchange", choices=["binance"], default="binance",

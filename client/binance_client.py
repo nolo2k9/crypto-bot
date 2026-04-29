@@ -45,8 +45,9 @@ class UnifiedBinanceClient:
 
         if testnet:
             self._client.API_URL = "https://testnet.binance.vision/api"
-            setattr(self._client, "FAPI_URL", "https://testnet.binancefuture.com/fapi")
-            setattr(self._client, "FURL",     "https://testnet.binancefuture.com/fapi")
+            setattr(self._client, "FAPI_URL",     "https://testnet.binancefuture.com/fapi")
+            setattr(self._client, "FURL",         "https://testnet.binancefuture.com/fapi")
+            setattr(self._client, "FUTURES_URL",  "https://testnet.binancefuture.com/fapi")
 
         self._futures_info_cache: Optional[Dict[str, Any]] = None
 

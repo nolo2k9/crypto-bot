@@ -352,7 +352,7 @@ def run_live_or_paper(
         return
 
     data_feed = CoinflareRestFeed(UnifiedBinanceClient(market_type=market_type, testnet=use_testnet),
-                                  symbols, interval, limit=500, poll_sec=2.0)
+                                  symbols, interval, limit=500, poll_sec=2.0, testnet=use_testnet)
     data_feed.start()
 
     # -------- State --------

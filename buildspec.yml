@@ -1,0 +1,42 @@
+version: 0.2
+
+env:
+  variables:
+    AWS_DEFAULT_REGION: eu-west-1
+    ECR_REPO: spiderbot
+    AWS_ACCOUNT_ID: "639381489406"
+  # Secrets injected from SSM at build time (not baked into image)
+  parameter-store:
+    BINANCE_KEY: /spiderbot/BINANCE_KEY
+    BINANCE_SECRET: /spiderbot/BINANCE_SECRET
+
+phases:
+  pre_build:
+    commands:
+      - echo Logging in to ECR...
+      - ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+      - IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-7)
+      - echo "Image tag $IMAGE_TAG"
+
+  build:
+    commands:
+      - echo Building image...
+      - docker build -t $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG .
+      - docker tag  $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPO:latest
+
+  post_build:
+    commands:
+      - echo Pushing image...
+      - docker push $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG
+      - docker push $ECR_REGISTRY/$ECR_REPO:latest
+      - echo "ECR_REGISTRY=$ECR_REGISTRY" > build.env
+      - echo "IMAGE_TAG=$IMAGE_TAG"       >> build.env
+      - echo "ECR_REPO=$ECR_REPO"         >> build.env
+
+artifacts:
+  files:
+    - appspec.yml
+    - docker-compose.yml
+    - scripts/**/*
+    - build.env
