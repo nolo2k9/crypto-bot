@@ -22,11 +22,10 @@ def _send_telegram(subject: str, body: str) -> bool:
     if not (_TG_TOKEN and _TG_CHAT_ID):
         return False
     try:
-        text = f"*{subject}*\n```\n{body[:3500]}\n```"
+        text = f"{subject}\n\n{body[:3800]}"
         payload = json.dumps({
             "chat_id": _TG_CHAT_ID,
             "text": text,
-            "parse_mode": "Markdown",
         }).encode()
         url = f"https://api.telegram.org/bot{_TG_TOKEN}/sendMessage"
         req = urllib.request.Request(
