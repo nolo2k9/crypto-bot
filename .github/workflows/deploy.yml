@@ -55,12 +55,13 @@ jobs:
             -o ConnectTimeout=10 \
             ubuntu@${{ secrets.EC2_HOST }} "
             set -e
-            if [ -d /home/ubuntu/crypto-bot/.git ]; then
-              cd /home/ubuntu/crypto-bot && git pull origin main
-            else
-              git clone https://github.com/nolo2k9/crypto-bot.git /home/ubuntu/crypto-bot
-              cd /home/ubuntu/crypto-bot
+            cd /home/ubuntu/crypto-bot
+            if [ ! -d .git ]; then
+              git init
+              git remote add origin https://github.com/nolo2k9/crypto-bot.git
             fi
+            git fetch origin main
+            git reset --hard origin/main
             aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
             docker pull ${ECR_IMAGE}
             docker compose down || true
