@@ -40,19 +40,19 @@ jobs:
           echo "image=$ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
       - name: Deploy to EC2
+        env:
+          ECR_IMAGE: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com/spiderbot:latest
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
-          ssh -i ~/.ssh/deploy_key ubuntu@${{ secrets.EC2_HOST }} << 'ENDSSH'
-            set -e
-            cd /home/ubuntu/crypto-bot
-            git pull origin main
-            aws ecr get-login-password --region us-east-1 \
-              | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
-            docker pull ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com/spiderbot:latest
-            docker compose down || true
-            ECR_IMAGE=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com/spiderbot:latest \
-              docker compose up -d
-          ENDSSH
+          ssh -i ~/.ssh/deploy_key ubuntu@${{ secrets.EC2_HOST }} "
+            set -e &&
+            cd /home/ubuntu/crypto-bot &&
+            git pull origin main &&
+            aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com &&
+            docker pull $ECR_IMAGE &&
+            (docker compose down || true) &&
+            ECR_IMAGE=$ECR_IMAGE docker compose up -d
+          "
