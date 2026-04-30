@@ -94,6 +94,10 @@ def parse_args():
                    help="Scale out 50%% at this × ATR profit (default 1.5). 0 to disable.")
     p.add_argument("--grid-search", action="store_true",
                    help="Run parameter grid search instead of single backtest (backtest mode only)")
+    p.add_argument("--strategy", nargs="+",
+                   choices=["trend", "mean_reversion", "breakout", "momentum", "all"],
+                   default=["trend"],
+                   help="Strategy or strategies to run (default: trend). Use 'all' for all four.")
     p.add_argument("--corr-threshold", type=float, default=0.70,
                    help="Block new entry if return correlation with any open position >= this (0=off, default 0.70)")
     try:

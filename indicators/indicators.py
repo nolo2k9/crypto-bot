@@ -110,6 +110,13 @@ def indicators(
     out["Vol_Osc"] = 100 * (short_vol - long_vol) / long_vol.replace(0, np.nan)
     out["Volume_MA"] = out["Volume"].rolling(20, min_periods=1).mean()
 
+    # --- Rate of Change (for momentum strategy) ---
+    out["ROC_10"] = close.pct_change(periods=10) * 100.0
+
+    # --- Rolling high/low (for breakout strategy) ---
+    out["rolling_high_20"] = high.shift(1).rolling(20, min_periods=5).max()
+    out["rolling_low_20"]  = low.shift(1).rolling(20, min_periods=5).min()
+
     # --- Fill critical cols ---
     critical_cols = [
         "ATR", "ATR_pct", "RSI", "ADX", "MACD", "MACD_SIGNAL", "MACD_HIST",
@@ -118,6 +125,7 @@ def indicators(
         "VWAP",
         "Stoch_RSI", "Stoch_RSI_K", "Stoch_RSI_D",
         "Vol_Osc", "Volume_MA",
+        "ROC_10", "rolling_high_20", "rolling_low_20",
     ]
     out[critical_cols] = out[critical_cols].ffill().bfill()
     total_nans = int(out[critical_cols].isna().sum().sum())
@@ -202,4 +210,174 @@ def simple_signal(row, adx_threshold: float = 20.0) -> int:
         return 1
     if bearish and not bullish:
         return -1
+    return 0
+
+
+def mean_reversion_signal(row, adx_threshold: float = 30.0) -> int:
+    """
+    Mean reversion: buy oversold bounces, sell overbought exhaustion.
+    Best in ranging/choppy markets (ADX below threshold).
+    Returns +1 (long), -1 (short), 0 (flat).
+    """
+    close = float(row.get("Close", 0) or 0)
+    if close <= 0:
+        return 0
+
+    rsi        = float(row.get("RSI", 50) or 50)
+    adx        = float(row.get("ADX", 0) or 0)
+    bb_pct     = float(row.get("BB_PCT", 0.5) or 0.5)
+    stoch_k    = float(row.get("Stoch_RSI_K", 50) or 50)
+    stoch_d    = float(row.get("Stoch_RSI_D", 50) or 50)
+    ema200_raw = row.get("EMA_200")
+
+    if adx > adx_threshold:
+        return 0
+
+    long_ok = short_ok = True
+    if ema200_raw is not None and not (isinstance(ema200_raw, float) and np.isnan(ema200_raw)):
+        ema200 = float(ema200_raw)
+        if ema200 > 0:
+            long_ok  = close > ema200 * 0.90
+            short_ok = close < ema200 * 1.10
+
+    bullish = (
+        long_ok
+        and rsi < 35
+        and bb_pct < 0.15
+        and stoch_k < 25
+        and stoch_k > stoch_d
+    )
+    bearish = (
+        short_ok
+        and rsi > 65
+        and bb_pct > 0.85
+        and stoch_k > 75
+        and stoch_k < stoch_d
+    )
+
+    if bullish and not bearish:
+        return 1
+    if bearish and not bullish:
+        return -1
+    return 0
+
+
+def breakout_signal(row) -> int:
+    """
+    Breakout: enter when price closes beyond recent 20-bar high/low with volume confirmation.
+    Returns +1 (long), -1 (short), 0 (flat).
+    """
+    close = float(row.get("Close", 0) or 0)
+    if close <= 0:
+        return 0
+
+    rolling_high = float(row.get("rolling_high_20", 0) or 0)
+    rolling_low  = float(row.get("rolling_low_20", float("inf")) or float("inf"))
+    vol          = float(row.get("Volume", 0) or 0)
+    vol_ma       = float(row.get("Volume_MA", 0) or 0)
+    adx          = float(row.get("ADX", 0) or 0)
+    rsi          = float(row.get("RSI", 50) or 50)
+    ema200_raw   = row.get("EMA_200")
+
+    if adx < 15:
+        return 0
+
+    vol_spike = vol_ma <= 0 or vol > vol_ma * 1.2
+
+    long_ok = short_ok = True
+    if ema200_raw is not None and not (isinstance(ema200_raw, float) and np.isnan(ema200_raw)):
+        ema200 = float(ema200_raw)
+        if ema200 > 0:
+            long_ok  = close > ema200 * 0.99
+            short_ok = close < ema200 * 1.01
+
+    bullish = (
+        long_ok
+        and rolling_high > 0
+        and close > rolling_high * 1.001
+        and vol_spike
+        and rsi < 80
+    )
+    bearish = (
+        short_ok
+        and rolling_low < float("inf")
+        and close < rolling_low * 0.999
+        and vol_spike
+        and rsi > 20
+    )
+
+    if bullish and not bearish:
+        return 1
+    if bearish and not bullish:
+        return -1
+    return 0
+
+
+def momentum_signal(row) -> int:
+    """
+    Momentum: enter in direction of strong price momentum with trend confirmation.
+    Uses 10-bar rate of change + EMA alignment + MACD.
+    Returns +1 (long), -1 (short), 0 (flat).
+    """
+    close = float(row.get("Close", 0) or 0)
+    if close <= 0:
+        return 0
+
+    roc        = float(row.get("ROC_10", 0) or 0)
+    adx        = float(row.get("ADX", 0) or 0)
+    rsi        = float(row.get("RSI", 50) or 50)
+    ema21      = float(row.get("EMA_21", close) or close)
+    ema50      = float(row.get("EMA_50", close) or close)
+    macd_hist  = float(row.get("MACD_HIST", 0) or 0)
+    vol        = float(row.get("Volume", 0) or 0)
+    vol_ma     = float(row.get("Volume_MA", 0) or 0)
+    ema200_raw = row.get("EMA_200")
+
+    if adx < 20:
+        return 0
+
+    vol_ok = vol_ma <= 0 or vol > vol_ma * 0.9
+
+    long_ok = short_ok = True
+    if ema200_raw is not None and not (isinstance(ema200_raw, float) and np.isnan(ema200_raw)):
+        ema200 = float(ema200_raw)
+        if ema200 > 0:
+            long_ok  = close > ema200 * 0.995
+            short_ok = close < ema200 * 1.005
+
+    trend_up = ema21 > ema50
+    trend_dn = ema21 < ema50
+
+    bullish = (
+        long_ok and trend_up
+        and roc > 2.0
+        and 50 < rsi < 75
+        and macd_hist > 0
+        and vol_ok
+    )
+    bearish = (
+        short_ok and trend_dn
+        and roc < -2.0
+        and 25 < rsi < 50
+        and macd_hist < 0
+        and vol_ok
+    )
+
+    if bullish and not bearish:
+        return 1
+    if bearish and not bullish:
+        return -1
+    return 0
+
+
+def get_signal(row, strategy: str = "trend", adx_threshold: float = 20.0) -> int:
+    """Dispatch to the correct signal function by strategy name."""
+    if strategy == "trend":
+        return simple_signal(row, adx_threshold=adx_threshold)
+    if strategy == "mean_reversion":
+        return mean_reversion_signal(row, adx_threshold=adx_threshold)
+    if strategy == "breakout":
+        return breakout_signal(row)
+    if strategy == "momentum":
+        return momentum_signal(row)
     return 0

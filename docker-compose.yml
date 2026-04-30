@@ -15,10 +15,26 @@ services:
       - "8000:8000"
     mem_limit: 512m
     command: ["--mode", "paper", "--use-testnet", "--symbols",
-              "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "AVAXUSDT",
+              "BTCUSDT",
               "--interval", "4h", "--leverage", "10", "--risk", "0.01",
-              "--tp-mult", "2.5", "--sl-mult", "1.5", "--adx-threshold", "25",
-              "--fee", "0.0005", "--no-ml"]
+              "--tp-mult", "3.5", "--sl-mult", "2.5", "--adx-threshold", "15",
+              "--fee", "0.0005", "--no-ml",
+              "--strategy", "trend", "mean_reversion"]
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    restart: unless-stopped
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
 
   prometheus:
     image: prom/prometheus:latest

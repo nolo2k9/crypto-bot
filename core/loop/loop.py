@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Tuple
 import pandas as pd
 
 from utils.precision import format_quantity
-from indicators.indicators import indicators, simple_signal
+from indicators.indicators import indicators, simple_signal, get_signal
 from ml_model.ml_model import RollingML, ml_available
 from data_feed.ws_feed import BinanceWsFeed as CoinflareRestFeed
 from risk_management.risk_management import (
@@ -234,6 +234,7 @@ def run_live_or_paper(
     trade_hours: Optional[tuple] = (6, 22),  # UTC hour range for entries; None=24h
     partial_tp_mult: float = 1.5,            # scale out 50% at this × ATR profit; 0=off
     corr_threshold: float = 0.70,            # skip entry if return corr with open pos >= this; 0=off
+    strategies: Optional[List[str]] = None,  # active strategies; None = ["trend"]
 ) -> None:
     """
     Live/Paper loop (Binance USDT-M):
@@ -1453,8 +1454,14 @@ def run_live_or_paper(
                         s["last_bar_ts"] = last_ts
                         continue
 
-                    # signal
-                    sig = simple_signal(row, adx_threshold=adx_threshold)
+                    # signal — combine all active strategies (any agreement fires)
+                    active_strats = strategies or ["trend"]
+                    sig = 0
+                    for _strat in active_strats:
+                        _s = get_signal(row, strategy=_strat, adx_threshold=adx_threshold)
+                        if _s != 0:
+                            sig = _s
+                            break
                     if ml and getattr(ml, "trained", False):
                         try:
                             ml.update_close(float(row.get("Close", 0) or 0))

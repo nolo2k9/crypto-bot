@@ -111,6 +111,9 @@ def main():
         if len(symbols) > 1:
             logging.info("Backtest supports a single symbol; using the first.")
 
+        raw_strategies = args.strategy if hasattr(args, "strategy") else ["trend"]
+        strategies = ["trend", "mean_reversion", "breakout", "momentum"] if "all" in raw_strategies else raw_strategies
+
         bt_kwargs = dict(
             symbol=symbols[0], interval=args.interval, days=args.days,
             risk_per_trade=args.risk, fee_rate=args.fee,
@@ -118,7 +121,7 @@ def main():
             market_type=args.market_type, leverage=args.leverage, rsi_period=args.rsi_period,
             htf_interval=args.htf_interval, trade_hours=trade_hours,
             partial_tp_mult=args.partial_tp_mult, adx_threshold=args.adx_threshold,
-            max_hold_hours=args.max_hours,
+            max_hold_hours=args.max_hours, strategies=strategies,
         )
         if getattr(args, "grid_search", False):
             grid_search_backtest(**{k: v for k, v in bt_kwargs.items()
@@ -158,6 +161,7 @@ def main():
         trade_hours=trade_hours,
         partial_tp_mult=args.partial_tp_mult,
         corr_threshold=args.corr_threshold,
+        strategies=strategies if 'strategies' in dir() else ["trend"],
     )
 
 

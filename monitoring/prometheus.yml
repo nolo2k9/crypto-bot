@@ -6,3 +6,7 @@ scrape_configs:
   - job_name: spiderbot
     static_configs:
       - targets: ['spiderbot:8000']
+
+  - job_name: node
+    static_configs:
+      - targets: ['node-exporter:9100']

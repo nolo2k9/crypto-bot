@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Tuple
 import pandas as pd
 
 from client.binance_client import create_client
-from indicators.indicators import indicators, simple_signal
+from indicators.indicators import indicators, simple_signal, get_signal
 from ml_model.ml_model import RollingML, ml_available
 from risk_management.risk_management import position_size_from_atr, trade_pnl, order_notional
 from utils.utils import fetch_klines_series
@@ -46,10 +46,11 @@ def backtest(
     slippage_bps_exit: float = 5.0,
     spread_bps: float = 2.0,
     funding_bps_per_day: float = 0.0,
-    htf_interval: Optional[str] = None,                  # None = auto-derive; "none" = disable
-    trade_hours: Optional[Tuple[int, int]] = (6, 22),    # UTC hour range for entries; None = 24h
-    partial_tp_mult: float = 1.5,                        # ATR multiple for 50% scale-out; 0 = off
+    htf_interval: Optional[str] = None,
+    trade_hours: Optional[Tuple[int, int]] = (6, 22),
+    partial_tp_mult: float = 1.5,
     adx_threshold: float = 20.0,
+    strategies: Optional[List[str]] = None,
 ) -> dict:
     def _bps(bps: float) -> float:
         return float(bps) / 10_000.0
@@ -129,19 +130,26 @@ def backtest(
             logging.warning("ML training error: %s", e)
             ml = None
 
-    # ---- State ----
+    # ---- Strategy setup ----
+    active_strategies = strategies or ["trend"]
+    risk_per_strategy = risk_per_trade / len(active_strategies)
+
+    def _blank_pos():
+        return {"pos": 0, "qty": None, "entry_price": None, "stop": None,
+                "take": None, "entry_time": None, "scaled_out": False}
+
+    strat_state = {s: _blank_pos() for s in active_strategies}
+
+    # ---- Shared P&L state ----
     balance = 10_000.0
     equity_curve: List[float] = []
     peak = balance
     max_dd = 0.0
-    pos = 0
-    qty = entry_price = stop = take = entry_time = None
-    scaled_out = False
     trades = wins = losses = 0
     gross_pnl = total_fees = realized_pnl = total_funding = 0.0
 
     def _size(px: float, atr: float) -> float:
-        return max(position_size_from_atr(balance, px, atr, risk_per_trade, sl_mult=sl_mult), min_trade_size)
+        return max(position_size_from_atr(balance, px, atr, risk_per_strategy, sl_mult=sl_mult), min_trade_size)
 
     def _record_exit(side_in: str, ep: float, ex: float, q: float, ts_entry, ts_exit):
         nonlocal balance, trades, wins, losses, gross_pnl, total_fees, realized_pnl, total_funding
@@ -165,103 +173,125 @@ def backtest(
         atr_val = float(row["ATR"])
         ts = row.name if isinstance(row.name, datetime) else datetime.now(timezone.utc)
 
-        side_in_cur = "BUY" if pos == 1 else "SELL"
+        # Process each strategy independently
+        for strat_name, st in strat_state.items():
+            pos        = st["pos"]
+            qty        = st["qty"]
+            entry_price = st["entry_price"]
+            stop       = st["stop"]
+            take       = st["take"]
+            entry_time = st["entry_time"]
+            scaled_out = st["scaled_out"]
 
-        # ATR trailing stop
-        if pos and stop is not None and atr_val > 0:
-            if pos == 1:
-                stop = max(stop, price - sl_mult * atr_val)
-            else:
-                stop = min(stop, price + sl_mult * atr_val)
+            side_in_cur = "BUY" if pos == 1 else "SELL"
 
-        # Partial TP: 50% scale-out at partial_tp_mult × ATR
-        if (partial_tp_mult > 0 and pos and not scaled_out
-                and entry_price is not None and qty and atr_val > 0):
-            profit = (price - entry_price) if pos == 1 else (entry_price - price)
-            if profit >= partial_tp_mult * atr_val:
-                half = qty * 0.5
-                close_px = _fill(price, "SELL" if pos == 1 else "BUY", entry=False)
-                pnl_part = _record_exit(side_in_cur, entry_price, close_px, half, entry_time, ts)
-                qty -= half
-                stop = entry_price  # move stop to breakeven
-                scaled_out = True
-                logging.info("PARTIAL-TP @%d: %s 50%% @ %.4f pnl=%.4f be_stop=%.4f",
-                             i, symbol, close_px, pnl_part, stop)
+            # ATR trailing stop
+            if pos and stop is not None and atr_val > 0:
+                if pos == 1:
+                    stop = max(stop, price - sl_mult * atr_val)
+                else:
+                    stop = min(stop, price + sl_mult * atr_val)
 
-        # Exits
-        if pos and stop is not None and take is not None:
-            hit_stop = (row["Low"] <= stop) if pos == 1 else (row["High"] >= stop)
-            hit_take = (row["High"] >= take) if pos == 1 else (row["Low"] <= take)
-            time_exit = entry_time and (ts - entry_time).total_seconds() / 3600 > max_hold_hours
-            if hit_stop or hit_take or time_exit:
-                ex_px = _fill(float(nxt["Open"]), "SELL" if pos == 1 else "BUY", entry=False)
-                pnl = _record_exit(side_in_cur, entry_price, ex_px, qty, entry_time, nxt.name)
-                reason = "stop" if hit_stop else "take" if hit_take else "time"
-                logging.info("EXIT @%d [%s]: %s entry=%.4f exit=%.4f qty=%.6f pnl=%.4f",
-                             i, reason, symbol, entry_price, ex_px, qty, pnl)
-                pos = 0; qty = entry_price = stop = take = entry_time = None; scaled_out = False
-                continue
+            # Partial TP
+            if (partial_tp_mult > 0 and pos and not scaled_out
+                    and entry_price is not None and qty and atr_val > 0):
+                profit = (price - entry_price) if pos == 1 else (entry_price - price)
+                if profit >= partial_tp_mult * atr_val:
+                    half = qty * 0.5
+                    close_px = _fill(price, "SELL" if pos == 1 else "BUY", entry=False)
+                    pnl_part = _record_exit(side_in_cur, entry_price, close_px, half, entry_time, ts)
+                    qty -= half
+                    stop = entry_price
+                    scaled_out = True
+                    logging.info("PARTIAL-TP @%d [%s]: %s 50%% @ %.4f pnl=%.4f",
+                                 i, strat_name, symbol, close_px, pnl_part)
 
-        # Entries
-        if not pos and atr_val > 0:
-            if not _in_session(ts, trade_hours):
-                continue
+            # Exits
+            if pos and stop is not None and take is not None:
+                hit_stop = (row["Low"] <= stop) if pos == 1 else (row["High"] >= stop)
+                hit_take = (row["High"] >= take) if pos == 1 else (row["Low"] <= take)
+                time_exit = entry_time and (ts - entry_time).total_seconds() / 3600 > max_hold_hours
+                if hit_stop or hit_take or time_exit:
+                    ex_px = _fill(float(nxt["Open"]), "SELL" if pos == 1 else "BUY", entry=False)
+                    pnl = _record_exit(side_in_cur, entry_price, ex_px, qty, entry_time, nxt.name)
+                    reason = "stop" if hit_stop else "take" if hit_take else "time"
+                    logging.info("EXIT @%d [%s] [%s]: %s entry=%.4f exit=%.4f pnl=%.4f",
+                                 i, strat_name, reason, symbol, entry_price, ex_px, pnl)
+                    st.update(_blank_pos())
+                    continue
 
-            sig = simple_signal(row, adx_threshold=adx_threshold)
+            # Entries
+            if not pos and atr_val > 0:
+                if not _in_session(ts, trade_hours):
+                    st.update({"pos": pos, "qty": qty, "entry_price": entry_price,
+                               "stop": stop, "take": take, "entry_time": entry_time,
+                               "scaled_out": scaled_out})
+                    continue
 
-            # Walk-forward ML: only on out-of-sample bars
-            if ml and ml.trained and i >= ml_split:
-                try:
-                    ml.update_close(price)
-                    if ml.should_retrain(i):
-                        ml.fit(df_ind.iloc[:i])
-                    ml_sig = ml.predict_signal(row)
-                    if ml_sig and sig and ml_sig != sig:
-                        sig = 0  # disagreement → skip
-                except Exception as e:
-                    logging.warning("ML predict error: %s", e)
+                sig = get_signal(row, strategy=strat_name, adx_threshold=adx_threshold)
 
-            if not sig:
-                continue
+                # ML gate (trend strategy only)
+                if strat_name == "trend" and ml and ml.trained and i >= ml_split:
+                    try:
+                        ml.update_close(price)
+                        if ml.should_retrain(i):
+                            ml.fit(df_ind.iloc[:i])
+                        ml_sig = ml.predict_signal(row)
+                        if ml_sig and sig and ml_sig != sig:
+                            sig = 0
+                    except Exception as e:
+                        logging.warning("ML predict error: %s", e)
 
-            # HTF trend gate
-            if len(htf_ema21) > i:
-                h21 = float(htf_ema21.iloc[i])
-                h50 = float(htf_ema50.iloc[i])
-                if h21 > 0 and h50 > 0 and not pd.isna(h21) and not pd.isna(h50):
-                    if sig == 1 and h21 < h50 * 0.999:
-                        continue
-                    if sig == -1 and h21 > h50 * 1.001:
-                        continue
+                # HTF trend gate (trend + momentum strategies only)
+                if sig and strat_name in ("trend", "momentum") and len(htf_ema21) > i:
+                    h21 = float(htf_ema21.iloc[i])
+                    h50 = float(htf_ema50.iloc[i])
+                    if h21 > 0 and h50 > 0 and not pd.isna(h21) and not pd.isna(h50):
+                        if sig == 1 and h21 < h50 * 0.999:
+                            sig = 0
+                        if sig == -1 and h21 > h50 * 1.001:
+                            sig = 0
 
-            side_in = "BUY" if sig == 1 else "SELL"
-            en_px = _fill(float(nxt["Open"]), side_in, entry=True)
-            q = _size(en_px, atr_val)
-            if q > 0:
-                pos = 1 if sig == 1 else -1
-                qty = q; entry_price = en_px
-                entry_time = nxt.name if isinstance(nxt.name, datetime) else ts
-                stop = en_px - sl_mult * atr_val if pos == 1 else en_px + sl_mult * atr_val
-                take = en_px + tp_mult * atr_val if pos == 1 else en_px - tp_mult * atr_val
-                scaled_out = False
-                logging.info("ENTRY @%d: %s %s en=%.4f qty=%.6f stop=%.4f take=%.4f",
-                             i, symbol, side_in, en_px, qty, stop, take)
+                if sig:
+                    side_in = "BUY" if sig == 1 else "SELL"
+                    en_px = _fill(float(nxt["Open"]), side_in, entry=True)
+                    q = _size(en_px, atr_val)
+                    if q > 0:
+                        pos = 1 if sig == 1 else -1
+                        qty = q
+                        entry_price = en_px
+                        entry_time = nxt.name if isinstance(nxt.name, datetime) else ts
+                        stop = en_px - sl_mult * atr_val if pos == 1 else en_px + sl_mult * atr_val
+                        take = en_px + tp_mult * atr_val if pos == 1 else en_px - tp_mult * atr_val
+                        scaled_out = False
+                        logging.info("ENTRY @%d [%s]: %s %s en=%.4f qty=%.6f",
+                                     i, strat_name, symbol, side_in, en_px, qty)
 
-        # MTM equity
-        mtm = trade_pnl(side_in_cur, entry_price, price, qty) if pos and entry_price else 0.0
+            st.update({"pos": pos, "qty": qty, "entry_price": entry_price,
+                       "stop": stop, "take": take, "entry_time": entry_time,
+                       "scaled_out": scaled_out})
+
+        # MTM equity across all open strategy positions
+        mtm = sum(
+            trade_pnl("BUY" if st["pos"] == 1 else "SELL", st["entry_price"], price, st["qty"])
+            for st in strat_state.values()
+            if st["pos"] and st["entry_price"]
+        )
         eq = balance + mtm
         equity_curve.append(eq)
         peak = max(peak, eq)
         max_dd = max(max_dd, (peak - eq) / peak if peak > 0 else 0.0)
 
-    # Force-close any open position
-    if pos and entry_price:
-        last_px = float(df_ind.iloc[-1]["Close"])
-        ex_px = _fill(last_px, "SELL" if pos == 1 else "BUY", entry=False)
-        pnl = _record_exit("BUY" if pos == 1 else "SELL", entry_price, ex_px, qty,
-                           entry_time, df_ind.index[-1])
-        logging.info("FINAL EXIT: %s entry=%.4f exit=%.4f qty=%.6f pnl=%.4f",
-                     symbol, entry_price, ex_px, qty, pnl)
+    # Force-close any open positions
+    for strat_name, st in strat_state.items():
+        if st["pos"] and st["entry_price"]:
+            last_px = float(df_ind.iloc[-1]["Close"])
+            side_in = "BUY" if st["pos"] == 1 else "SELL"
+            ex_px = _fill(last_px, "SELL" if st["pos"] == 1 else "BUY", entry=False)
+            pnl = _record_exit(side_in, st["entry_price"], ex_px, st["qty"],
+                               st["entry_time"], df_ind.index[-1])
+            logging.info("FINAL EXIT [%s]: %s entry=%.4f exit=%.4f pnl=%.4f",
+                         strat_name, symbol, st["entry_price"], ex_px, pnl)
 
     win_rate = wins / trades if trades else 0.0
     summary = {
@@ -269,6 +299,7 @@ def backtest(
         "symbol": symbol, "interval": interval, "htf": _htf,
         "market_type": market_type,
         "leverage": leverage if market_type == "futures" else "N/A",
+        "strategies": active_strategies,
         "tp_mult": tp_mult, "sl_mult": sl_mult,
         "partial_tp_mult": partial_tp_mult,
         "adx_threshold": adx_threshold,
