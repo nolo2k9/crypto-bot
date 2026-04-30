@@ -50,13 +50,17 @@ jobs:
       - name: Deploy to EC2
         run: |
           ECR_IMAGE="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com/spiderbot:latest"
-          ssh -v -i ~/.ssh/deploy_key \
+          ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             -o ConnectTimeout=10 \
             ubuntu@${{ secrets.EC2_HOST }} "
             set -e
-            cd /home/ubuntu/crypto-bot
-            git pull origin main
+            if [ -d /home/ubuntu/crypto-bot/.git ]; then
+              cd /home/ubuntu/crypto-bot && git pull origin main
+            else
+              git clone https://github.com/nolo2k9/crypto-bot.git /home/ubuntu/crypto-bot
+              cd /home/ubuntu/crypto-bot
+            fi
             aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
             docker pull ${ECR_IMAGE}
             docker compose down || true
