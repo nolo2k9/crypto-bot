@@ -44,12 +44,16 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+          echo "EC2_HOST is: '${{ secrets.EC2_HOST }}'"
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts || echo "keyscan failed (host may be unreachable)"
 
       - name: Deploy to EC2
         run: |
           ECR_IMAGE="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com/spiderbot:latest"
-          ssh -i ~/.ssh/deploy_key ubuntu@${{ secrets.EC2_HOST }} "
+          ssh -v -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=10 \
+            ubuntu@${{ secrets.EC2_HOST }} "
             set -e
             cd /home/ubuntu/crypto-bot
             git pull origin main
