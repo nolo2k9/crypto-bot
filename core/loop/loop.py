@@ -1087,6 +1087,10 @@ def run_live_or_paper(
                 # regime filters
                 regime_fit = not ((atr < (min_atr_bps/10_000.0)*price) or (adx < float(adx_threshold)) or (bbw < (min_bbw_bps/10_000.0)*price))
                 if not regime_fit:
+                    reason = ("ATR" if atr < (min_atr_bps/10_000.0)*price
+                              else "ADX" if adx < float(adx_threshold)
+                              else "BBW")
+                    logging.info("[REGIME] %s skip: %s too low (atr=%.2f adx=%.1f bbw=%.2f)", sym, reason, atr, adx, bbw)
                     s["stale_count"] = s.get("stale_count", 0) + 1
                     s["last_bar_ts"] = last_ts
                     # micro-rotation for stale symbols (flat only)
@@ -1474,6 +1478,7 @@ def run_live_or_paper(
 
                     entry_side = "BUY" if sig == 1 else "SELL" if sig == -1 else None
                     if entry_side is None or atr <= 0:
+                        logging.info("[SIGNAL] %s no signal (sig=0, adx=%.1f, atr=%.2f)", sym, adx, atr)
                         s["last_bar_ts"] = last_ts
                         continue
 
@@ -1483,6 +1488,7 @@ def run_live_or_paper(
                         utc_h = now.hour
                         _in_sess = (h0 <= utc_h < h1) if h0 < h1 else (utc_h >= h0 or utc_h < h1)
                         if not _in_sess:
+                            logging.info("[HOURS] %s skip: UTC hour %d outside window %d-%d", sym, utc_h, h0, h1)
                             s["last_bar_ts"] = last_ts
                             continue
 
@@ -1493,11 +1499,11 @@ def run_live_or_paper(
                         h50 = float(htf_row.get("EMA_50", 0) or 0)
                         if h21 > 0 and h50 > 0:
                             if entry_side == "BUY" and h21 < h50 * 0.999:
-                                logging.debug("[HTF] Skip BUY %s: HTF trend down", sym)
+                                logging.info("[HTF] Skip BUY %s: 1d bearish (EMA21=%.0f < EMA50=%.0f)", sym, h21, h50)
                                 s["last_bar_ts"] = last_ts
                                 continue
                             if entry_side == "SELL" and h21 > h50 * 1.001:
-                                logging.debug("[HTF] Skip SELL %s: HTF trend up", sym)
+                                logging.info("[HTF] Skip SELL %s: 1d bullish (EMA21=%.0f > EMA50=%.0f)", sym, h21, h50)
                                 s["last_bar_ts"] = last_ts
                                 continue
 
