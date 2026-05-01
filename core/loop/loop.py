@@ -518,9 +518,18 @@ def run_live_or_paper(
                 "peak_equity", "stale_count", "scaled_out", "last_bar_ts",
                 "small_qty_count", "brackets",
             )
+            _ts_fields = ("last_bar_ts", "entry_time")
             for sym, saved_s in _saved.get("state", {}).items():
                 if sym in state:
-                    state[sym].update({k: saved_s[k] for k in _restore_fields if k in saved_s})
+                    merged = {k: saved_s[k] for k in _restore_fields if k in saved_s}
+                    # Convert ISO strings back to timezone-aware datetimes
+                    for _f in _ts_fields:
+                        if isinstance(merged.get(_f), str):
+                            try:
+                                merged[_f] = datetime.fromisoformat(merged[_f])
+                            except Exception:
+                                merged[_f] = None
+                    state[sym].update(merged)
                     if saved_s.get("position", 0) != 0:
                         logging.info("[STATE] Restored open position %s: pos=%s qty=%s ep=%s",
                                      sym, saved_s["position"], saved_s.get("qty"), saved_s.get("entry_price"))
