@@ -56,7 +56,7 @@ def _fg_risk_mult(fg: int) -> float:
 
 from client.binance_client import UnifiedBinanceClient
 
-from core.state.state import save_runtime_state
+from core.state.state import save_runtime_state, load_runtime_state
 from core.logging.logging import setup_logging
 from utils.health import exchange_healthy
 from utils.balance import get_free_usdt
@@ -301,6 +301,7 @@ def run_live_or_paper(
                     tp_px=tp_q,
                     market_type=market_type,
                     leverage_hint=leverage,
+                    mode=mode,
                 )
                 s["brackets"] = br
                 logging.info(f"[BOOTSTRAP] Placed brackets for existing position {sym}: stop={sl_q} take={tp_q}")
@@ -504,6 +505,26 @@ def run_live_or_paper(
 
     # Attach any remaining positions (if not flattened) and set SL/TP
     _bootstrap_existing_positions()
+
+    # Restore persisted paper state so open positions survive restarts.
+    # Only applied in paper mode — live mode derives positions from the venue.
+    if mode == "paper":
+        _saved = load_runtime_state(state_file)
+        if _saved and _saved.get("meta", {}).get("mode") == "paper":
+            _restore_fields = (
+                "position", "qty", "entry_price", "entry_time",
+                "stop", "take", "realized_pnl", "unrealized_pnl",
+                "consecutive_losses", "cooldown_bars_left", "disabled",
+                "peak_equity", "stale_count", "scaled_out", "last_bar_ts",
+                "small_qty_count", "brackets",
+            )
+            for sym, saved_s in _saved.get("state", {}).items():
+                if sym in state:
+                    state[sym].update({k: saved_s[k] for k in _restore_fields if k in saved_s})
+                    if saved_s.get("position", 0) != 0:
+                        logging.info("[STATE] Restored open position %s: pos=%s qty=%s ep=%s",
+                                     sym, saved_s["position"], saved_s.get("qty"), saved_s.get("entry_price"))
+            logging.info("[STATE] Paper state loaded from %s", state_file)
 
     # ---- HTF data ----
     _htf = None if (htf_interval or "").lower() == "none" else (htf_interval or _HTF_MAP.get(interval.lower()))
@@ -873,6 +894,7 @@ def run_live_or_paper(
                                                 entry_price=fmt_price_for(client, sym, exchange, ep),
                                                 sl_px=sl_q_p, tp_px=tp_q_p,
                                                 market_type=market_type, leverage_hint=leverage,
+                                                mode=mode,
                                             )
                                             s['brackets'] = new_br
                                         except Exception as e_br:
@@ -1203,7 +1225,7 @@ def run_live_or_paper(
                         cap_side = force_side
                         logging.info(f"[CAP-CHECK] {sym} side={cap_side} qty={qty_str} notional={notional:.6f} "
                                      f"hard_cap={hard_cap:.6f} wallet={wallet_free:.6f} lev={leverage} "
-                                     f"minNotional={float(eff_min_notional or 10.0):.2f}")
+                                     f"minNotional={float(eff_min_notional or 10.0):.2f} fg_mult={_fg_mult:.2f}")
 
                         if not under_cap:
                             logging.warning(f"[CAP-BLOCK] {sym} order blocked: notional {notional:.6f} > cap {hard_cap:.6f}")
@@ -1302,6 +1324,7 @@ def run_live_or_paper(
                                 tp_px=tp_q,
                                 market_type=market_type,
                                 leverage_hint=leverage,
+                                mode=mode,
                             )
                             s["brackets"] = br
                         except Exception as e:
@@ -1563,7 +1586,7 @@ def run_live_or_paper(
                     cap_side = entry_side
                     logging.info(f"[CAP-CHECK] {sym} side={cap_side} qty={qty_str} notional={notional:.6f} "
                                  f"hard_cap={hard_cap:.6f} wallet={wallet_free:.6f} lev={leverage} "
-                                 f"minNotional={float(eff_min_notional or 10.0):.2f}")
+                                 f"minNotional={float(eff_min_notional or 10.0):.2f} fg_mult={_fg_mult:.2f}")
 
                     # If we can't meet minNotional within the hard cap, SKIP the trade.
                     if not under_cap:
@@ -1681,6 +1704,7 @@ def run_live_or_paper(
                             tp_px=tp_q,
                             market_type=market_type,
                             leverage_hint=leverage,
+                            mode=mode,
                         )
                         s["brackets"] = br
                     except Exception as e:

@@ -11,6 +11,7 @@ def place_bracket_orders(
     tp_px: float,
     market_type: str = "futures",
     leverage_hint: int | None = None,
+    mode: str = "live",
 ):
     """
     Binance USDT-M Futures bracket: TAKE_PROFIT_MARKET (TP) + STOP_MARKET (SL).
@@ -18,6 +19,10 @@ def place_bracket_orders(
     """
     if market_type != "futures":
         logging.info("[BRACKETS] Spot mode: skipping bracket placement.")
+        return {"tp": None, "sl": None}
+
+    if mode == "paper":
+        logging.info("[BRACKETS] Paper mode: skipping venue bracket placement for %s (exit via price comparison).", symbol)
         return {"tp": None, "sl": None}
 
     close_side = "SELL" if side_in.upper() in ("BUY", "BUY_OPEN") else "BUY"
