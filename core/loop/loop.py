@@ -1232,33 +1232,36 @@ def run_live_or_paper(
                         # verify fill
                         time.sleep(0.6)
                         net_after = 0.0
-                        try:
-                            net_after = get_net_position_qty(client, sym)
-                        except Exception:
-                            pass
-
-                        if abs(float(net_after)) < 1e-12:
-                            # Fallback: IOC at top of book (small epsilon so it crosses)
+                        if isinstance(resp, dict) and resp.get("paper"):
+                            executed_qty = float(resp.get("executedQty", qty_str) or qty_str)
+                            net_after = executed_qty if force_side == "BUY" else -executed_qty
+                        else:
                             try:
+                                net_after = get_net_position_qty(client, sym)
+                            except Exception:
+                                pass
 
-                                bid, ask = _best_bid_ask(client, sym)
-                                if force_side == "BUY":
-                                    px_ioc = (ask if ask > 0 else price) * 1.001
-                                else:
-                                    px_ioc = (bid if bid > 0 else price) * 0.999
-
-                                place_limit_ioc_order(
-                                    client=client, symbol=sym, side=force_side, qty_str=qty_str,
-                                    price=px_ioc, market_type=market_type, leverage_hint=leverage,
-                                    exchange=exchange,
-                                )
-                                time.sleep(0.6)
+                            if abs(float(net_after)) < 1e-12:
+                                # Fallback: IOC at top of book (small epsilon so it crosses)
                                 try:
-                                    net_after = get_net_position_qty(client, sym)
-                                except Exception:
-                                    net_after = 0.0
-                            except Exception as e:
-                                logging.warning(f"[ENTRY-FALLBACK] IOC fallback failed for {sym}: {e}")
+                                    bid, ask = _best_bid_ask(client, sym)
+                                    if force_side == "BUY":
+                                        px_ioc = (ask if ask > 0 else price) * 1.001
+                                    else:
+                                        px_ioc = (bid if bid > 0 else price) * 0.999
+
+                                    place_limit_ioc_order(
+                                        client=client, symbol=sym, side=force_side, qty_str=qty_str,
+                                        price=px_ioc, market_type=market_type, leverage_hint=leverage,
+                                        exchange=exchange,
+                                    )
+                                    time.sleep(0.6)
+                                    try:
+                                        net_after = get_net_position_qty(client, sym)
+                                    except Exception:
+                                        net_after = 0.0
+                                except Exception as e:
+                                    logging.warning(f"[ENTRY-FALLBACK] IOC fallback failed for {sym}: {e}")
 
                         if abs(float(net_after)) < 1e-12:
                             logging.info(f"[ENTRY] No fill for {sym} ({force_side}); skipping state/brackets.")
@@ -1606,34 +1609,38 @@ def run_live_or_paper(
                     # verify fill
                     time.sleep(0.6)
                     net_after = 0.0
-                    try:
-                        net_after = get_net_position_qty(client, sym)
-                    except Exception:
-                        pass
-
-                    if abs(float(net_after)) < 1e-12:
-                        # Fallback: IOC at top of book (small epsilon so it crosses)
+                    if isinstance(resp, dict) and resp.get("paper"):
+                        # Paper mode: order is simulated locally, no venue position to query
+                        executed_qty = float(resp.get("executedQty", qty_str) or qty_str)
+                        net_after = executed_qty if entry_side == "BUY" else -executed_qty
+                    else:
                         try:
+                            net_after = get_net_position_qty(client, sym)
+                        except Exception:
+                            pass
 
-                            bid, ask = _best_bid_ask(client, sym)
-                            if entry_side == "BUY":
-                                px_ioc = (ask if ask > 0 else price) * 1.001
-                            else:
-                                px_ioc = (bid if bid > 0 else price) * 0.999
-
-                            place_limit_ioc_order(
-                                client=client, symbol=sym, side=entry_side, qty_str=qty_str,
-                                price=px_ioc, market_type=market_type, leverage_hint=leverage,
-                                exchange=exchange,
-                            )
-
-                            time.sleep(0.6)
+                        if abs(float(net_after)) < 1e-12:
+                            # Fallback: IOC at top of book (small epsilon so it crosses)
                             try:
-                                net_after = get_net_position_qty(client, sym)
-                            except Exception:
-                                net_after = 0.0
-                        except Exception as e:
-                            logging.warning(f"[ENTRY-FALLBACK] IOC fallback failed for {sym}: {e}")
+                                bid, ask = _best_bid_ask(client, sym)
+                                if entry_side == "BUY":
+                                    px_ioc = (ask if ask > 0 else price) * 1.001
+                                else:
+                                    px_ioc = (bid if bid > 0 else price) * 0.999
+
+                                place_limit_ioc_order(
+                                    client=client, symbol=sym, side=entry_side, qty_str=qty_str,
+                                    price=px_ioc, market_type=market_type, leverage_hint=leverage,
+                                    exchange=exchange,
+                                )
+
+                                time.sleep(0.6)
+                                try:
+                                    net_after = get_net_position_qty(client, sym)
+                                except Exception:
+                                    net_after = 0.0
+                            except Exception as e:
+                                logging.warning(f"[ENTRY-FALLBACK] IOC fallback failed for {sym}: {e}")
 
                     if abs(float(net_after)) < 1e-12:
                         logging.info(f"[ENTRY] No fill for {sym} ({entry_side}); skipping state/brackets.")
