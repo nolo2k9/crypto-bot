@@ -29,22 +29,44 @@ def order_notional(side: str, price: float, qty: float) -> float:
 def portfolio_var(positions: dict, prices: dict, df: dict, leverage: int = 1) -> float:
     weights = []
     returns = []
+    total_notional = sum(
+        p["qty"] * prices.get(s, p.get("entry_price") or 0) * leverage
+        for s, p in positions.items() if p.get("qty", 0) > 0
+    )
+    if total_notional <= 0:
+        return 0.0
+
     for sym, pos in positions.items():
-        if pos["qty"] > 0:
-            price = prices.get(sym, pos["entry_price"])
+        if pos.get("qty", 0) > 0:
+            price = prices.get(sym) or pos.get("entry_price") or 0
+            if price <= 0:
+                continue
             notional = pos["qty"] * price * leverage
-            total_notional = sum(
-                p["qty"] * prices.get(s, p["entry_price"]) * leverage for s, p in positions.items() if p["qty"] > 0)
-            weight = notional / total_notional if total_notional > 0 else 0
-            weights.append(weight)
-            rets = df[sym]["Close"].pct_change().dropna() if sym in df and not df[sym].empty else pd.Series()
-            returns.append(rets[-252:])
+            weights.append(notional / total_notional)
+            rets = (
+                df[sym]["Close"].pct_change().dropna().tail(252)
+                if sym in df and not df[sym].empty
+                else pd.Series(dtype=float)
+            )
+            returns.append(rets)
 
     if not weights or not returns:
         return 0.0
 
-    cov_matrix = np.cov(returns)
-    return np.sqrt(np.dot(weights, np.dot(cov_matrix * 252, weights))) if weights else 0.0
+    # Single position: variance only, no covariance needed
+    if len(returns) == 1:
+        var = float(returns[0].var()) * 252
+        return float(np.sqrt(max(var, 0.0)))
+
+    # Align all series to the same length before computing covariance
+    min_len = min(len(r) for r in returns)
+    if min_len < 2:
+        return 0.0
+    matrix = np.array([r.iloc[-min_len:].values for r in returns])
+    cov_matrix = np.cov(matrix)
+    w = np.array(weights)
+    variance = float(np.dot(w, np.dot(cov_matrix * 252, w)))
+    return float(np.sqrt(max(variance, 0.0)))
 
 
 

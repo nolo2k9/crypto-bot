@@ -98,7 +98,7 @@ def indicators(
     rsi = out["RSI"]
     rsi_low = rsi.rolling(stoch_k).min()
     rsi_high = rsi.rolling(stoch_k).max()
-    stoch_rsi = 100 * (rsi - rsi_low) / (rsi_high - rsi_low + 1e-9)
+    stoch_rsi = 100 * (rsi - rsi_low) / (rsi_high - rsi_low + 1e-6)
     out["Stoch_RSI"] = stoch_rsi
     out["Stoch_RSI_K"] = stoch_rsi.rolling(stoch_smooth_k).mean()
     out["Stoch_RSI_D"] = out["Stoch_RSI_K"].rolling(stoch_smooth_d).mean()

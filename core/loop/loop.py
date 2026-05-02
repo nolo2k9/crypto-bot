@@ -685,8 +685,8 @@ def run_live_or_paper(
                     except Exception as e:
                         logging.warning(f"[STATE] Save after re-eval failed: {e}")
 
-            # Daily reset
-            if (now - day_start) > timedelta(days=1):
+            # Daily reset at UTC calendar midnight (not rolling 24h)
+            if now.date() > day_start.date():
                 day_start = now
                 starting_balance = max(1.0, get_free_usdt(client, market_type))
                 day_realized_pnl = 0.0
