@@ -1497,7 +1497,10 @@ def run_live_or_paper(
                     active_strats = strategies or ["trend"]
                     sig = 0
                     for _strat in active_strats:
-                        _s = get_signal(row, strategy=_strat, adx_threshold=adx_threshold)
+                        # mean_reversion needs a higher ADX ceiling (its own default=30)
+                        # so it isn't crippled by the trend adx_threshold
+                        _thresh = 30.0 if _strat == "mean_reversion" else adx_threshold
+                        _s = get_signal(row, strategy=_strat, adx_threshold=_thresh)
                         if _s != 0:
                             sig = _s
                             break
