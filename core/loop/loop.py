@@ -70,7 +70,11 @@ from core.helpers.time_index_helpers.time_index_helpers import (
 )
 from core.helpers.futures_position_helpers.futures_Position_helpers import clean_up_residual_futures_position
 from utils.select_symbols import auto_select_symbols
-from core.gauges.gauges import equity_gauge, pnl_gauge, drawdown_gauge
+from core.gauges.gauges import (
+    equity_gauge, pnl_gauge, drawdown_gauge,
+    open_positions_gauge, unrealized_pnl_gauge, trade_count_gauge,
+    adx_gauge, fear_greed_gauge,
+)
 
 
 # -------------------- tiny helpers --------------------
@@ -581,6 +585,7 @@ def run_live_or_paper(
             _last_fg_fetch = datetime.now(timezone.utc)
             logging.info("[SENTIMENT] Fear & Greed=%d → risk_mult=%.2f", _fg_index, _fg_mult)
             send_alert("Sentiment Update", {"Fear_Greed": _fg_index, "Risk_Mult": f"{_fg_mult:.2f}"})
+            fear_greed_gauge.set(max(0, _fg_index))
         except Exception as e:
             logging.warning("[SENTIMENT] F&G refresh failed: %s", e)
 
@@ -591,6 +596,8 @@ def run_live_or_paper(
     stale_threshold_sec = max(2 * poll_sleep, 180)
     var_block = False  # when True, block NEW entries but keep managing existing positions
     last_reeval = last_pnl_log = last_autosave = datetime.now(timezone.utc)
+    last_daily_summary = datetime.now(timezone.utc) - timedelta(hours=10)
+    total_trade_count = 0
     reeval_interval = timedelta(minutes=reeval_interval_minutes)
     autosave_delta = timedelta(seconds=max(10, int(autosave_sec)))
     global_stale_cycles = 0
@@ -721,7 +728,28 @@ def run_live_or_paper(
             adj_risk = adaptive_risk_scaling(state, risk_per_trade, max(drawdown, 0.0),
                                              max_consec_losses=3, max_drawdown=abs(daily_loss_limit))
             adj_risk = adj_risk * _fg_mult  # Fear & Greed scaling
-            equity_gauge.set(total_equity); drawdown_gauge.set(drawdown * 100)
+            equity_gauge.set(total_equity)
+            drawdown_gauge.set(drawdown * 100)
+            _open_count_g = sum(1 for _s in state.values() if _s.get("position", 0) != 0)
+            _total_unrealized_g = sum(_s.get("unrealized_pnl", 0.0) for _s in state.values())
+            open_positions_gauge.set(_open_count_g)
+            unrealized_pnl_gauge.set(_total_unrealized_g)
+            fear_greed_gauge.set(max(0, _fg_index))
+            trade_count_gauge.set(total_trade_count)
+
+            # Daily 09:00 UTC summary via Telegram
+            if now.hour == 9 and now.date() > last_daily_summary.date():
+                last_daily_summary = now
+                send_alert("Daily Summary", {
+                    "Equity": f"{total_equity:.2f} USDT",
+                    "Day_PnL": f"{day_realized_pnl:+.2f} USDT",
+                    "Unrealized": f"{_total_unrealized_g:+.2f} USDT",
+                    "Drawdown": f"{drawdown:.2%}",
+                    "Open_Positions": _open_count_g,
+                    "Fear_Greed": _fg_index,
+                    "Trades_Today": total_trade_count,
+                    "Timestamp": now.isoformat(),
+                })
 
             # Hard stops
             if drawdown > 0.5:
@@ -1111,6 +1139,10 @@ def run_live_or_paper(
                 price = float(row['Close'])
                 atr = float(row.get('ATR', 0.0) or 0.0)
                 adx = float(row.get('ADX', 0.0) or 0.0)
+                try:
+                    adx_gauge.labels(symbol=sym).set(adx)
+                except Exception:
+                    pass
                 vol = float(row.get('Volume', 0.0) or 0.0)
                 bb_u = float(row.get('BB_UPPER', price)); bb_l = float(row.get('BB_LOWER', price))
                 bbw = bb_u - bb_l
@@ -1267,10 +1299,14 @@ def run_live_or_paper(
                             executed_qty = float(resp.get("executedQty", qty_str) or qty_str)
                             net_after = executed_qty if force_side == "BUY" else -executed_qty
                         else:
-                            try:
-                                net_after = get_net_position_qty(client, sym)
-                            except Exception:
-                                pass
+                            for _attempt in range(3):
+                                time.sleep(0.3 * (2 ** _attempt))
+                                try:
+                                    net_after = get_net_position_qty(client, sym)
+                                except Exception:
+                                    net_after = 0.0
+                                if abs(float(net_after)) > 1e-12:
+                                    break
 
                             if abs(float(net_after)) < 1e-12:
                                 # Fallback: IOC at top of book (small epsilon so it crosses)
@@ -1301,6 +1337,7 @@ def run_live_or_paper(
 
                         # Use actual filled direction/qty from the venue
                         pos_dir = 1 if float(net_after) > 0 else -1
+                        total_trade_count += 1
                         fill_qty = _fmt_qty(sym, abs(float(net_after)))
                         qty_str_filled = _fmt_qty_str(sym, fill_qty)
 
@@ -1642,17 +1679,21 @@ def run_live_or_paper(
                         continue
 
                     # verify fill
-                    time.sleep(0.6)
                     net_after = 0.0
                     if isinstance(resp, dict) and resp.get("paper"):
                         # Paper mode: order is simulated locally, no venue position to query
                         executed_qty = float(resp.get("executedQty", qty_str) or qty_str)
                         net_after = executed_qty if entry_side == "BUY" else -executed_qty
                     else:
-                        try:
-                            net_after = get_net_position_qty(client, sym)
-                        except Exception:
-                            pass
+                        # Live mode: retry with backoff before triggering IOC fallback
+                        for _attempt in range(3):
+                            time.sleep(0.3 * (2 ** _attempt))  # 0.3s, 0.6s, 1.2s
+                            try:
+                                net_after = get_net_position_qty(client, sym)
+                            except Exception:
+                                net_after = 0.0
+                            if abs(float(net_after)) > 1e-12:
+                                break
 
                         if abs(float(net_after)) < 1e-12:
                             # Fallback: IOC at top of book (small epsilon so it crosses)
@@ -1684,6 +1725,7 @@ def run_live_or_paper(
 
                     # Use actual filled direction/qty from the venue
                     pos_dir = 1 if float(net_after) > 0 else -1
+                    total_trade_count += 1
                     fill_qty = _fmt_qty(sym, abs(float(net_after)))
                     qty_str_filled = _fmt_qty_str(sym, fill_qty)
 

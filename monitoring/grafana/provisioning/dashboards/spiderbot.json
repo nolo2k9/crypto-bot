@@ -1,7 +1,7 @@
 {
   "title": "SpiderBot",
   "uid": "spiderbot",
-  "version": 1,
+  "version": 2,
   "schemaVersion": 36,
   "refresh": "30s",
   "panels": [
@@ -25,11 +25,30 @@
     },
     {
       "id": 3,
-      "title": "Realized PnL by Symbol (USDT)",
-      "type": "bargauge",
-      "gridPos": {"h": 4, "w": 12, "x": 12, "y": 0},
-      "targets": [{"expr": "bot_realized_pnl_usdt", "legendFormat": "{{symbol}}"}],
-      "fieldConfig": {"defaults": {"unit": "currencyUSD"}}
+      "title": "Open Positions",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0},
+      "targets": [{"expr": "bot_open_positions", "legendFormat": "Open"}],
+      "fieldConfig": {"defaults": {"unit": "none", "color": {"mode": "fixed", "fixedColor": "blue"},
+        "thresholds": {"steps": [{"color": "blue", "value": 0}]}}}
+    },
+    {
+      "id": 8,
+      "title": "Fear & Greed",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 0},
+      "targets": [{"expr": "bot_fear_greed", "legendFormat": "F&G"}],
+      "fieldConfig": {"defaults": {"unit": "none", "min": 0, "max": 100, "color": {"mode": "thresholds"},
+        "thresholds": {"steps": [{"color": "red", "value": 0}, {"color": "orange", "value": 25},
+          {"color": "yellow", "value": 45}, {"color": "green", "value": 55}, {"color": "red", "value": 75}]}}}
+    },
+    {
+      "id": 9,
+      "title": "Total Trades",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 0},
+      "targets": [{"expr": "bot_trade_count", "legendFormat": "Trades"}],
+      "fieldConfig": {"defaults": {"unit": "none", "color": {"mode": "fixed", "fixedColor": "purple"}}}
     },
     {
       "id": 4,
@@ -40,10 +59,38 @@
       "fieldConfig": {"defaults": {"unit": "currencyUSD", "color": {"mode": "fixed", "fixedColor": "green"}}}
     },
     {
-      "id": 5,
-      "title": "PnL Over Time",
+      "id": 10,
+      "title": "Unrealized PnL (USDT)",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 12},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+      "targets": [{"expr": "bot_unrealized_pnl_usdt", "legendFormat": "Unrealized PnL"}],
+      "fieldConfig": {"defaults": {"unit": "currencyUSD", "color": {"mode": "fixed", "fixedColor": "orange"},
+        "custom": {"lineWidth": 1}}}
+    },
+    {
+      "id": 5,
+      "title": "Realized PnL by Symbol (USDT)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+      "targets": [{"expr": "bot_realized_pnl_usdt", "legendFormat": "{{symbol}}"}],
+      "fieldConfig": {"defaults": {"unit": "currencyUSD"}}
+    },
+    {
+      "id": 6,
+      "title": "ADX by Symbol",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+      "targets": [{"expr": "bot_adx", "legendFormat": "{{symbol}}"}],
+      "fieldConfig": {"defaults": {"unit": "none", "min": 0,
+        "custom": {"lineWidth": 1},
+        "thresholds": {"steps": [{"color": "red", "value": 0}, {"color": "yellow", "value": 20}, {"color": "green", "value": 40}]}}},
+      "options": {"tooltip": {"mode": "multi"}}
+    },
+    {
+      "id": 7,
+      "title": "Realized PnL by Symbol (Bar)",
+      "type": "bargauge",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
       "targets": [{"expr": "bot_realized_pnl_usdt", "legendFormat": "{{symbol}}"}],
       "fieldConfig": {"defaults": {"unit": "currencyUSD"}}
     }

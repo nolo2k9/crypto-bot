@@ -8,11 +8,31 @@ Exports:
 
 from __future__ import annotations
 
+import logging
 import os
+import time
 from functools import lru_cache
 from typing import Any, Dict, List, Optional
 
 from binance.client import Client as _BinanceClient
+
+
+def _with_retry(fn, *args, retries: int = 3, **kwargs):
+    """Call fn with exponential backoff on 429 / connection errors."""
+    for attempt in range(retries):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            msg = str(e)
+            is_rate_limit = "429" in msg or "418" in msg or "Too Many Requests" in msg
+            is_transient = is_rate_limit or "Connection" in msg or "timeout" in msg.lower()
+            if is_transient and attempt < retries - 1:
+                wait = 2 ** attempt  # 1s, 2s, 4s
+                logging.warning("[CLIENT] Transient error (attempt %d/%d), retrying in %ds: %s",
+                                attempt + 1, retries, wait, e)
+                time.sleep(wait)
+            else:
+                raise
 
 
 class UnifiedBinanceClient:
@@ -93,11 +113,11 @@ class UnifiedBinanceClient:
     def get_klines(self, symbol: str, interval: str, limit: int = 500,
                    start_str=None, end_str=None, **_) -> List:
         if self.market_type == "futures":
-            return self._client.futures_klines(
+            return _with_retry(self._client.futures_klines,
                 symbol=symbol, interval=interval, limit=limit,
                 startTime=start_str, endTime=end_str,
             )
-        return self._client.get_klines(
+        return _with_retry(self._client.get_klines,
             symbol=symbol, interval=interval, limit=limit,
             startTime=start_str, endTime=end_str,
         )
@@ -121,7 +141,7 @@ class UnifiedBinanceClient:
     # ------------------------------------------------------------------ #
 
     def futures_account_balance(self) -> List[Dict[str, Any]]:
-        return self._client.futures_account_balance()
+        return _with_retry(self._client.futures_account_balance)
 
     def futures_account(self) -> Dict[str, Any]:
         return self._client.futures_account()
@@ -132,22 +152,22 @@ class UnifiedBinanceClient:
 
     def futures_position_information(self, symbol: str = "") -> List[Dict[str, Any]]:
         kwargs = {"symbol": symbol} if symbol else {}
-        return self._client.futures_position_information(**kwargs) or []
+        return _with_retry(self._client.futures_position_information, **kwargs) or []
 
     # Alias so position-helper code that calls .positions() still works
     def positions(self, symbol: str = "", **_) -> List[Dict[str, Any]]:
         return self.futures_position_information(symbol) if symbol else \
-               self._client.futures_position_information() or []
+               _with_retry(self._client.futures_position_information) or []
 
     # ------------------------------------------------------------------ #
     #  Orders                                                              #
     # ------------------------------------------------------------------ #
 
     def futures_create_order(self, **params) -> Dict[str, Any]:
-        return self._client.futures_create_order(**params)
+        return _with_retry(self._client.futures_create_order, **params)
 
     def futures_cancel_order(self, symbol: str, orderId) -> Dict[str, Any]:
-        return self._client.futures_cancel_order(symbol=symbol, orderId=orderId)
+        return _with_retry(self._client.futures_cancel_order, symbol=symbol, orderId=orderId)
 
     def create_order(self, **params) -> Dict[str, Any]:
         return self._client.create_order(**params)
