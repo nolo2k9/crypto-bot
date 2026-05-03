@@ -185,9 +185,9 @@ def simple_signal(row, adx_threshold: float = 20.0) -> int:
         and trend_up
         and macd_hist > 0
         and macd > macd_sig
-        and 40 < rsi < 72
+        and 40 < rsi < 80
         and stoch_k > stoch_d
-        and stoch_k < 85
+        and stoch_k < 90
         and close > vwap * 0.997
         and bb_pct > 0.3
         and (vol_osc > -10 or vol_ok)
@@ -198,9 +198,9 @@ def simple_signal(row, adx_threshold: float = 20.0) -> int:
         and trend_dn
         and macd_hist < 0
         and macd < macd_sig
-        and 28 < rsi < 60
+        and 20 < rsi < 60
         and stoch_k < stoch_d
-        and stoch_k > 15
+        and stoch_k > 10
         and close < vwap * 1.003
         and bb_pct < 0.7
         and (vol_osc > -10 or vol_ok)
@@ -212,9 +212,9 @@ def simple_signal(row, adx_threshold: float = 20.0) -> int:
         return -1
     import logging as _log
     _log.info("[TREND-DEBUG] sig=0 long_ok=%s short_ok=%s trend_up=%s trend_dn=%s "
-              "macd_hist=%.2f rsi=%.1f stoch_k=%.1f bb_pct=%.2f close_vs_vwap=%.4f",
+              "macd_hist=%.2f rsi=%.1f stoch_k=%.1f stoch_d=%.1f bb_pct=%.2f close_vs_vwap=%.4f",
               long_ok, short_ok, trend_up, trend_dn,
-              macd_hist, rsi, stoch_k, bb_pct, (close / vwap - 1) if vwap else 0)
+              macd_hist, rsi, stoch_k, stoch_d, bb_pct, (close / vwap - 1) if vwap else 0)
     return 0
 
 
