@@ -186,8 +186,7 @@ def simple_signal(row, adx_threshold: float = 20.0) -> int:
         and macd_hist > 0
         and macd > macd_sig
         and 40 < rsi < 80
-        and stoch_k > stoch_d
-        and stoch_k < 90
+        and stoch_k > 25
         and close > vwap * 0.997
         and bb_pct > 0.3
         and (vol_osc > -10 or vol_ok)
@@ -199,8 +198,7 @@ def simple_signal(row, adx_threshold: float = 20.0) -> int:
         and macd_hist < 0
         and macd < macd_sig
         and 20 < rsi < 60
-        and stoch_k < stoch_d
-        and stoch_k > 10
+        and stoch_k < 75
         and close < vwap * 1.003
         and bb_pct < 0.7
         and (vol_osc > -10 or vol_ok)
